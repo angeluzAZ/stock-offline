@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2f6bff">
+<title>Stock offline — HZ + AZ</title>
+<link rel="manifest" href="manifest.json">
+<style>
+  /* ===== CONFIG: pegá acá el link CSV de la planilla (paso del instructivo) ===== */
+  /* Se lee desde JS más abajo (const DATA_URL). */
+
+  :root{
+    --tam:1;
+    --bg:#eef1f8; --surface:#fff; --surface-2:#f6f8fc;
+    --ink:#0f172a; --ink-soft:#586074; --line:#e2e7f0;
+    --acc:#2f6bff; --acc-soft:#e8f0ff;
+    --verde:#067a4e; --verde-bg:#dcf5e9; --verde-bar:#18b877;
+    --rojo:#c23b22; --rojo-bg:#fbe6e1;
+    --sombra:0 1px 2px rgba(15,23,42,.06), 0 14px 34px -22px rgba(15,23,42,.28);
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#090d18; --surface:#141a2b; --surface-2:#1b2236;
+    --ink:#eef2fb; --ink-soft:#9aa6c2; --line:#28324a;
+    --acc:#5b8cff; --acc-soft:#1a2540;
+    --verde:#38e08e; --verde-bg:#123024; --verde-bar:#34d399;
+    --rojo:#ff7a63; --rojo-bg:#3a1a14;
+    --sombra:0 1px 2px rgba(0,0,0,.4), 0 18px 40px -22px rgba(0,0,0,.7);
+  }}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    padding:0 14px env(safe-area-inset-bottom);}
+  .wrap{max-width:640px;margin:0 auto;}
+  header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 82%,transparent);
+    backdrop-filter:blur(10px);padding:14px 2px 10px;}
+  .titrow{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  h1{font-size:calc(20px*var(--tam));margin:0;font-weight:800;}
+  .estado{font-size:calc(12px*var(--tam));font-weight:700;padding:4px 10px;border-radius:999px;white-space:nowrap;}
+  .estado.on{background:var(--verde-bg);color:var(--verde);}
+  .estado.off{background:var(--rojo-bg);color:var(--rojo);}
+  .sub{font-size:calc(12.5px*var(--tam));color:var(--ink-soft);margin:6px 2px 0;font-weight:600;}
+  .toolbar{display:flex;gap:8px;align-items:center;margin-top:11px;}
+  input[type=search]{flex:1;font-size:calc(19px*var(--tam));font-weight:600;
+    padding:15px 16px;border:1px solid var(--line);border-radius:16px;background:var(--surface);
+    color:var(--ink);box-shadow:var(--sombra);width:100%;}
+  .tam{display:flex;gap:4px;}
+  .tam button{border:1px solid var(--line);background:var(--surface);color:var(--ink);
+    border-radius:12px;font-weight:800;padding:0 12px;height:52px;cursor:pointer;}
+  .tam button.act{background:var(--acc);color:#fff;border-color:var(--acc);}
+  .tam button.s1{font-size:15px}.tam button.s2{font-size:19px}.tam button.s3{font-size:23px}
+  .msg{padding:22px 6px;color:var(--ink-soft);font-size:calc(15px*var(--tam));font-weight:600;text-align:center;}
+  main{padding:12px 0 30px;}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:20px;
+    padding:calc(15px*var(--tam)) 17px;margin-bottom:14px;box-shadow:var(--sombra);}
+  .head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .cod{font-family:ui-monospace,Consolas,monospace;font-weight:800;
+    font-size:calc(14px*var(--tam));letter-spacing:1.2px;color:var(--ink-soft);}
+  .badge{display:flex;align-items:baseline;gap:5px;padding:7px 13px;border-radius:14px;font-weight:900;white-space:nowrap;}
+  .badge .n{font-size:calc(23px*var(--tam));}
+  .badge .u{font-size:calc(11px*var(--tam));font-weight:800;text-transform:uppercase;letter-spacing:.05em;}
+  .badge.hay{background:var(--verde-bg);color:var(--verde);}
+  .badge.no{background:var(--rojo-bg);color:var(--rojo);}
+  .desc{font-size:calc(19px*var(--tam));font-weight:700;color:var(--ink);margin:9px 0 3px;line-height:1.25;}
+  .meta{font-size:calc(13.5px*var(--tam));color:var(--ink-soft);font-weight:700;margin-bottom:11px;}
+  .deps{display:flex;flex-direction:column;gap:8px;}
+  .dep{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:11px;
+    padding:calc(10px*var(--tam)) 13px;border-radius:12px;background:var(--surface-2);}
+  .mk{font-size:calc(18px*var(--tam));width:calc(22px*var(--tam));text-align:center;}
+  .dep.si .mk{color:var(--verde);} .dep.no .mk{color:var(--ink-soft);opacity:.6;}
+  .lugar{font-weight:700;font-size:calc(16px*var(--tam));color:var(--ink);}
+  .right{display:flex;align-items:center;gap:11px;justify-content:flex-end;}
+  .bar{width:calc(70px*var(--tam));height:9px;border-radius:6px;background:var(--line);overflow:hidden;}
+  .bar>i{display:block;height:100%;border-radius:6px;background:var(--verde-bar);}
+  .val{font-family:ui-monospace,Consolas,monospace;font-weight:900;
+    font-size:calc(19px*var(--tam));min-width:calc(42px*var(--tam));text-align:right;}
+  .dep.si .val{color:var(--verde);} .dep.no .val{color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="titrow">
+      <h1>📦 Stock offline</h1>
+      <span id="estado" class="estado off">…</span>
+    </div>
+    <div id="sub" class="sub">Cargando…</div>
+    <div class="toolbar">
+      <input id="q" type="search" inputmode="search" placeholder="Código, descripción o adicional…" autocomplete="off">
+      <div class="tam" role="group" aria-label="Tamaño de letra">
+        <button class="s1 act" data-t="1">A</button>
+        <button class="s2" data-t="1.25">A+</button>
+        <button class="s3" data-t="1.55">A++</button>
+      </div>
+    </div>
+  </header>
+  <main id="out"><div class="msg" id="hint">Escribí un código, descripción o adicional para buscar.</div></main>
+</div>
+
+<script>
+/* ====== CONFIG ====== */
+/* Pegá acá el link CSV que te da Google al "Publicar en la web" la pestaña
+   CONSULTA_OFF. Debe terminar en output=csv. Ejemplo:
+   const DATA_URL = "https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=0&single=true&output=csv"; */
+const DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYogyE0vKUA1pEV9Zn1VFN6iH95FOhw0daP7Oc5Sr9PFfDRavlhTGlzhmXwk1LP7s0kzttblIjfy01/pub?gid=2066096640&single=true&output=csv";
+
+/* Depósitos que se muestran de cada empresa y sus nombres */
+const DEP_EMP = { HZ:["1","9","15","8","7"], AZ:["2","5"] };
+const DEPNAME = {"1":"HERAS","9":"ALTO","15":"PERICO","7":"Pulmón rollos","8":"Central","2":"URDI","5":"NECO"};
+
+const K_DATA="stock_off_data", K_TS="stock_off_ts";
+let DATOS=[]; // {codigo,descripcion,adicional,deposito,empresa,stock}
+
+/* ---- CSV parser simple con comillas ---- */
+function parseCSV(txt){
+  const rows=[]; let f="",row=[],q=false;
+  for(let i=0;i<txt.length;i++){const c=txt[i];
+    if(q){ if(c=='"'){ if(txt[i+1]=='"'){f+='"';i++;} else q=false;} else f+=c; }
+    else{ if(c=='"')q=true; else if(c==','){row.push(f);f="";}
+      else if(c=='\n'){row.push(f);rows.push(row);row=[];f="";}
+      else if(c=='\r'){} else f+=c; }
+  }
+  if(f.length||row.length){row.push(f);rows.push(row);}
+  return rows;
+}
+function filasADatos(rows){
+  if(!rows.length) return [];
+  const h=rows[0].map(x=>x.trim().toLowerCase());
+  const ix=n=>h.indexOf(n);
+  const iC=ix("codigo"),iD=ix("descripcion"),iA=ix("adicional"),iDep=ix("deposito"),iE=ix("empresa"),iS=ix("stock");
+  const out=[];
+  for(let r=1;r<rows.length;r++){const x=rows[r]; if(!x||!x.length||x.every(v=>!v.trim()))continue;
+    out.push({codigo:(x[iC]||"").trim(),descripcion:(x[iD]||"").trim(),adicional:(x[iA]||"").trim(),
+      deposito:(x[iDep]||"").trim(),empresa:(x[iE]||"").trim(),stock:parseFloat((x[iS]||"0").replace(",",".")) || 0});
+  }
+  return out;
+}
+
+function setEstado(online){
+  const e=document.getElementById("estado");
+  e.className="estado "+(online?"on":"off");
+  e.textContent=online?"● En línea":"● Sin conexión";
+}
+function setSub(){
+  const ts=localStorage.getItem(K_TS);
+  const n=DATOS.length;
+  document.getElementById("sub").textContent =
+    ts ? `Guardado en el celular: ${ts} · ${n.toLocaleString("es")} registros` :
+         "Todavía no se descargó el stock. Conectate a internet una vez.";
+}
+function cargarLocal(){
+  try{ DATOS=JSON.parse(localStorage.getItem(K_DATA)||"[]"); }catch(e){ DATOS=[]; }
+}
+async function descargar(){
+  if(DATA_URL.startsWith("PEGAR")) return false;
+  try{
+    const r=await fetch(DATA_URL,{cache:"no-store"});
+    if(!r.ok) throw 0;
+    const datos=filasADatos(parseCSV(await r.text()));
+    if(datos.length){
+      DATOS=datos;
+      localStorage.setItem(K_DATA,JSON.stringify(datos));
+      localStorage.setItem(K_TS,new Date().toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}));
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
+
+const num=v=>{v=Number(v)||0; return (v===Math.trunc(v)?v.toLocaleString("es"):v.toLocaleString("es",{minimumFractionDigits:1,maximumFractionDigits:1}));};
+const esc=s=>(s||"").replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+function buscar(){
+  const t=document.getElementById("q").value.trim().toLowerCase();
+  const out=document.getElementById("out");
+  if(!t){ out.innerHTML='<div class="msg">Escribí un código, descripción o adicional para buscar.</div>'; return; }
+  if(!DATOS.length){ out.innerHTML='<div class="msg">No hay stock guardado. Conectate a internet para descargarlo la primera vez.</div>'; return; }
+  const m=DATOS.filter(d=>d.codigo.toLowerCase().includes(t)||d.descripcion.toLowerCase().includes(t)||d.adicional.toLowerCase().includes(t));
+  if(!m.length){ out.innerHTML='<div class="msg">Sin resultados.</div>'; return; }
+  // agrupar por código
+  const g={};
+  for(const d of m){ (g[d.codigo]=g[d.codigo]||[]).push(d); }
+  const grupos=Object.entries(g).map(([cod,arr])=>({cod,arr,tot:arr.reduce((a,b)=>a+b.stock,0)}));
+  grupos.sort((a,b)=>b.tot-a.tot);
+  const N=Math.min(grupos.length,150);
+  let html="";
+  if(grupos.length>150) html+=`<div class="msg">${grupos.length.toLocaleString("es")} productos · mostrando 150</div>`;
+  for(let i=0;i<N;i++){
+    const {cod,arr,tot}=grupos[i]; const g0=arr[0];
+    const emps=[...new Set(arr.map(d=>d.empresa))].sort();
+    const pres={}; arr.forEach(d=>pres[d.deposito.trim()]=d.stock);
+    let exp=[];
+    for(const e of emps) for(const dc of (DEP_EMP[e]||[])) exp.push([dc,pres[dc]||0]);
+    exp.sort((a,b)=>b[1]-a[1]);
+    const mx=Math.max(1,...exp.map(x=>x[1]));
+    let filas="";
+    for(const [dc,stk] of exp){
+      const si=stk>0, w=si?Math.round(stk/mx*100):0;
+      filas+=`<div class="dep ${si?'si':'no'}"><span class="mk">${si?'✔':'—'}</span>`+
+        `<span class="lugar">${esc(DEPNAME[dc]||('Dep '+dc))}</span>`+
+        `<span class="right"><span class="bar"><i style="width:${w}%"></i></span>`+
+        `<span class="val">${num(stk)}</span></span></div>`;
+    }
+    const adic=g0.adicional?` · ${esc(g0.adicional)}`:"";
+    html+=`<div class="card"><div class="head"><span class="cod">${esc(cod)}</span>`+
+      `<span class="badge ${tot>0?'hay':'no'}"><span class="n">${num(tot)}</span><span class="u">u</span></span></div>`+
+      `<div class="desc">${esc(g0.descripcion)}${adic}</div>`+
+      `<div class="meta">${emps.join(" / ")}</div>`+
+      `<div class="deps">${filas}</div></div>`;
+  }
+  out.innerHTML=html;
+}
+
+/* tamaño de letra */
+document.querySelectorAll(".tam button").forEach(b=>b.onclick=()=>{
+  document.documentElement.style.setProperty("--tam",b.dataset.t);
+  document.querySelectorAll(".tam button").forEach(x=>x.classList.remove("act"));
+  b.classList.add("act"); localStorage.setItem("stock_off_tam",b.dataset.t);
+});
+(function(){const t=localStorage.getItem("stock_off_tam");
+  if(t){document.documentElement.style.setProperty("--tam",t);
+    document.querySelectorAll(".tam button").forEach(x=>x.classList.toggle("act",x.dataset.t===t));}})();
+
+let deb; document.getElementById("q").addEventListener("input",()=>{clearTimeout(deb);deb=setTimeout(buscar,120);});
+window.addEventListener("online",()=>{setEstado(true);sync();});
+window.addEventListener("offline",()=>setEstado(false));
+
+async function sync(){ const ok=await descargar(); setSub(); if(ok&&document.getElementById("q").value) buscar(); }
+
+/* arranque */
+cargarLocal(); setEstado(navigator.onLine); setSub();
+if(navigator.onLine) sync();
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+</script>
+</body>
+</html>
