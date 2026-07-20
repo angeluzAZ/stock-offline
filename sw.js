@@ -1,6 +1,6 @@
 // Service worker: cachea la app para que abra SIN internet.
 // Subí la versión (v1 -> v2...) cada vez que cambies index.html para forzar update.
-const CACHE = "stock-off-v1";
+const CACHE = "stock-off-v2";
 const SHELL = ["./", "index.html", "manifest.json"];
 
 self.addEventListener("install", e => {
