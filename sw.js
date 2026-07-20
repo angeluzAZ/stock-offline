@@ -1,7 +1,8 @@
-// Service worker: cachea la app para que abra SIN internet.
-// Subí la versión (v1 -> v2...) cada vez que cambies index.html para forzar update.
-const CACHE = "stock-off-v2";
-const SHELL = ["./", "index.html", "manifest.json"];
+// Service worker: hace que la app abra SIN internet.
+// "Network-first": con internet trae SIEMPRE lo último; sin internet usa lo guardado.
+// Subí la versión (v2 -> v3...) cada vez que cambies index.html o sw.js.
+const CACHE = "stock-off-v3";
+const SHELL = ["./", "index.html", "manifest.json", "icon.png"];
 
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -17,14 +18,15 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
-  // Datos (CSV de Google): siempre intentar red; si no hay, no rompe (la app usa lo guardado).
+  // Datos (CSV de Google): que lo maneje la app (no lo tocamos acá).
   if (req.url.includes("output=csv") || req.url.includes("docs.google.com")) return;
-  // App shell: primero cache, si no red (y guarda copia).
+  // App (html/js/json/png): PRIMERO la red (para tener siempre lo último);
+  // si no hay internet, usa la copia guardada.
   e.respondWith(
-    caches.match(req).then(hit => hit || fetch(req).then(res => {
+    fetch(req).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(req, copy)).catch(() => {});
       return res;
-    }).catch(() => caches.match("index.html")))
+    }).catch(() => caches.match(req).then(hit => hit || caches.match("index.html")))
   );
 });
