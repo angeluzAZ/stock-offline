@@ -191,7 +191,11 @@ function buscar(){
   const g={};
   for(const d of m){ (g[d.codigo]=g[d.codigo]||[]).push(d); }
   const grupos=Object.entries(g).map(([cod,arr])=>({cod,arr,tot:arr.reduce((a,b)=>a+b.stock,0)}));
-  grupos.sort((a,b)=>b.tot-a.tot);
+  // primero los códigos que EMPIEZAN con lo buscado; después, más stock primero
+  grupos.sort((a,b)=>{
+    const pa=a.cod.toLowerCase().startsWith(t)?0:1, pb=b.cod.toLowerCase().startsWith(t)?0:1;
+    return pa-pb || b.tot-a.tot;
+  });
   const N=Math.min(grupos.length,150);
   let html="";
   if(grupos.length>150) html+=`<div class="msg">${grupos.length.toLocaleString("es")} productos · mostrando 150</div>`;
