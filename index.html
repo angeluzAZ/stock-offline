@@ -54,6 +54,10 @@
     border-radius:12px;font-weight:800;padding:0 12px;height:52px;cursor:pointer;}
   .tam button.act{background:var(--acc);color:#fff;border-color:var(--acc);}
   .tam button.s1{font-size:15px}.tam button.s2{font-size:19px}.tam button.s3{font-size:23px}
+  .filtros{display:flex;gap:8px;margin-top:10px;}
+  .pill{flex:1;border:1px solid var(--line);background:var(--surface);color:var(--ink-soft);
+    border-radius:12px;font-weight:800;font-size:calc(14px*var(--tam));padding:11px 10px;cursor:pointer;}
+  .pill.act{background:var(--acc);color:#fff;border-color:var(--acc);}
   .msg{padding:22px 6px;color:var(--ink-soft);font-size:calc(15px*var(--tam));font-weight:600;text-align:center;}
   main{padding:12px 0 30px;}
 
@@ -100,6 +104,10 @@
         <button class="s3" data-t="1.55">A++</button>
       </div>
     </div>
+    <div class="filtros" role="group" aria-label="Filtro de stock">
+      <button id="f-con" class="pill act">✓ Con stock</button>
+      <button id="f-todos" class="pill">Todos (incluye 0)</button>
+    </div>
   </header>
   <main id="out"><div class="msg" id="hint">Escribí un código, descripción o adicional para buscar.</div></main>
 </div>
@@ -110,13 +118,28 @@
    CONSULTA_OFF. Debe terminar en output=csv. Ejemplo:
    const DATA_URL = "https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=0&single=true&output=csv"; */
 const DATA_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYogyE0vKUA1pEV9Zn1VFN6iH95FOhw0daP7Oc5Sr9PFfDRavlhTGlzhmXwk1LP7s0kzttblIjfy01/pub?gid=2066096640&single=true&output=csv";
+/* Link CSV de la pestaña META (chico). Sirve para saber si hubo cambios SIN bajar
+   todo el stock. Si queda en "PEGAR...", igual funciona pero baja siempre. */
+const META_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTYogyE0vKUA1pEV9Zn1VFN6iH95FOhw0daP7Oc5Sr9PFfDRavlhTGlzhmXwk1LP7s0kzttblIjfy01/pub?gid=1505041739&single=true&output=csv";
 
 /* Depósitos que se muestran de cada empresa y sus nombres */
 const DEP_EMP = { HZ:["1","9","15","8","7"], AZ:["2","5"] };
 const DEPNAME = {"1":"HERAS","9":"ALTO","15":"PERICO","7":"Pulmón rollos","8":"Central","2":"URDI","5":"NECO"};
 
-const K_DATA="stock_off_data", K_TS="stock_off_ts";
+const K_TS="stock_off_ts", K_FECHA="stock_off_fecha";
 let DATOS=[]; // {codigo,descripcion,adicional,deposito,empresa,stock}
+let SOLO_CON_STOCK=true; // botón: mostrar solo lo que tiene stock (o todos)
+
+/* ---- IndexedDB: guarda TODO el catálogo (localStorage se quedaba chico) ---- */
+function idb(){return new Promise((res,rej)=>{const r=indexedDB.open("stock_off_db",1);
+  r.onupgradeneeded=()=>r.result.createObjectStore("kv");
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+async function idbSet(k,v){const db=await idb();return new Promise((res,rej)=>{
+  const t=db.transaction("kv","readwrite"); t.objectStore("kv").put(v,k);
+  t.oncomplete=()=>res(); t.onerror=()=>rej(t.error);});}
+async function idbGet(k){const db=await idb();return new Promise((res,rej)=>{
+  const t=db.transaction("kv","readonly"); const rq=t.objectStore("kv").get(k);
+  rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error);});}
 
 /* ---- CSV parser simple con comillas ---- */
 function parseCSV(txt){
@@ -158,23 +181,43 @@ function setSub(){
     ts ? `Guardado en el celular: ${ts} · ${n.toLocaleString("es")} registros` :
          "Todavía no se descargó el stock. Conectate a internet una vez.";
 }
-function cargarLocal(){
-  try{ DATOS=JSON.parse(localStorage.getItem(K_DATA)||"[]"); }catch(e){ DATOS=[]; }
+async function cargarLocal(){
+  try{ DATOS = (await idbGet("datos")) || []; }catch(e){ DATOS=[]; }
 }
+/* lee la fecha de la última actualización desde META (respuesta chica) */
+async function leerFechaRemota(){
+  if(META_URL.startsWith("PEGAR")) return null;
+  try{
+    const r=await fetch(META_URL+"&_="+Date.now(),{cache:"no-store"});
+    if(!r.ok) return null;
+    const rows=parseCSV(await r.text());
+    if(rows.length>=2){ const h=rows[0].map(x=>x.trim().toLowerCase());
+      const i=h.indexOf("fecha"); return ((rows[1][i]||"").trim())||null; }
+  }catch(e){}
+  return null;
+}
+/* devuelve: "sincambios" | "actualizado" | "sincfg" | "error" */
 async function descargar(){
-  if(DATA_URL.startsWith("PEGAR")) return false;
+  if(DATA_URL.startsWith("PEGAR")) return "sincfg";
+  const fechaRemota = await leerFechaRemota();
+  const fechaLocal  = localStorage.getItem(K_FECHA);
+  // si ya tengo datos y la fecha no cambió → NO bajo (ahorra dato móvil)
+  if(DATOS.length && fechaRemota && fechaLocal && fechaRemota===fechaLocal) return "sincambios";
+  // si no pude leer META pero ya tengo datos → me quedo con lo guardado
+  if(DATOS.length && !fechaRemota) return "sincambios";
   try{
     const r=await fetch(DATA_URL,{cache:"no-store"});
     if(!r.ok) throw 0;
     const datos=filasADatos(parseCSV(await r.text()));
     if(datos.length){
       DATOS=datos;
-      localStorage.setItem(K_DATA,JSON.stringify(datos));
+      await idbSet("datos",datos);
       localStorage.setItem(K_TS,new Date().toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}));
-      return true;
+      if(fechaRemota) localStorage.setItem(K_FECHA,fechaRemota);
+      return "actualizado";
     }
   }catch(e){}
-  return false;
+  return "error";
 }
 
 const num=v=>{v=Number(v)||0; return (v===Math.trunc(v)?v.toLocaleString("es"):v.toLocaleString("es",{minimumFractionDigits:1,maximumFractionDigits:1}));};
@@ -190,7 +233,9 @@ function buscar(){
   // agrupar por código
   const g={};
   for(const d of m){ (g[d.codigo]=g[d.codigo]||[]).push(d); }
-  const grupos=Object.entries(g).map(([cod,arr])=>({cod,arr,tot:arr.reduce((a,b)=>a+b.stock,0)}));
+  let grupos=Object.entries(g).map(([cod,arr])=>({cod,arr,tot:arr.reduce((a,b)=>a+b.stock,0)}));
+  if(SOLO_CON_STOCK) grupos=grupos.filter(x=>x.tot>0);   // botón: solo con stock
+  if(!grupos.length){ out.innerHTML='<div class="msg">Sin stock. Tocá «Todos» para ver también los que están en 0.</div>'; return; }
   // primero los códigos que EMPIEZAN con lo buscado; después, más stock primero
   grupos.sort((a,b)=>{
     const pa=a.cod.toLowerCase().startsWith(t)?0:1, pb=b.cod.toLowerCase().startsWith(t)?0:1;
@@ -235,15 +280,32 @@ document.querySelectorAll(".tam button").forEach(b=>b.onclick=()=>{
   if(t){document.documentElement.style.setProperty("--tam",t);
     document.querySelectorAll(".tam button").forEach(x=>x.classList.toggle("act",x.dataset.t===t));}})();
 
+/* filtro Con stock / Todos */
+function setFiltro(soloConStock){
+  SOLO_CON_STOCK=soloConStock;
+  document.getElementById("f-con").classList.toggle("act",soloConStock);
+  document.getElementById("f-todos").classList.toggle("act",!soloConStock);
+  localStorage.setItem("stock_off_filtro",soloConStock?"1":"0");
+  if(document.getElementById("q").value) buscar();
+}
+document.getElementById("f-con").onclick=()=>setFiltro(true);
+document.getElementById("f-todos").onclick=()=>setFiltro(false);
+(function(){ if(localStorage.getItem("stock_off_filtro")==="0") setFiltro(false); })();
+
 let deb; document.getElementById("q").addEventListener("input",()=>{clearTimeout(deb);deb=setTimeout(buscar,120);});
 window.addEventListener("online",()=>{setEstado(true);sync();});
 window.addEventListener("offline",()=>setEstado(false));
 
-async function sync(){ const ok=await descargar(); setSub(); if(ok&&document.getElementById("q").value) buscar(); }
+async function sync(){
+  const res=await descargar(); setSub();
+  if(res==="actualizado" && document.getElementById("q").value) buscar();
+}
 
 /* arranque */
-cargarLocal(); setEstado(navigator.onLine); setSub();
-if(navigator.onLine) sync();
+(async()=>{
+  await cargarLocal(); setEstado(navigator.onLine); setSub();
+  if(navigator.onLine) await sync();
+})();
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
 </script>
 </body>

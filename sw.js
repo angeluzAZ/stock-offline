@@ -1,7 +1,7 @@
 // Service worker: hace que la app abra SIN internet.
 // "Network-first": con internet trae SIEMPRE lo último; sin internet usa lo guardado.
 // Subí la versión (v2 -> v3...) cada vez que cambies index.html o sw.js.
-const CACHE = "stock-off-v4";
+const CACHE = "stock-off-v5";
 const SHELL = ["./", "index.html", "manifest.json", "icon.png"];
 
 self.addEventListener("install", e => {
